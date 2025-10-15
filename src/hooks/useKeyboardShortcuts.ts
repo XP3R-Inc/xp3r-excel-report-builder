@@ -67,8 +67,17 @@ export function useKeyboardShortcuts({ shortcuts, enabled = true, target }: UseK
       if (shortcut.enabled === false) continue;
 
       if (matchesShortcut(event, shortcut)) {
-        if (isInputField && !shortcut.ctrl && !shortcut.meta && shortcut.key.length === 1) {
-          continue;
+        // When typing in inputs/contenteditable, allow normal text editing keys
+        if (isInputField && !shortcut.ctrl && !shortcut.meta) {
+          // Ignore printable characters (single-char shortcuts) to not interfere with typing
+          if (shortcut.key.length === 1) {
+            continue;
+          }
+          // Ignore deletion keys so Backspace/Delete doesn't trigger global delete
+          const k = shortcut.key;
+          if (k === 'Backspace' || k === 'Delete') {
+            continue;
+          }
         }
 
         if (shortcut.preventDefault !== false) {
