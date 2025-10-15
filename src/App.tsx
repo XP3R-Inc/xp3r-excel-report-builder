@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileSpreadsheet, Eye, Download, Database, Upload, FileUp, History, Save, Home } from 'lucide-react';
+import { FileSpreadsheet, Eye, Download, Database, Upload, FileUp, History, Save, Home, Pencil, FileDown } from 'lucide-react';
 import { useToast } from './contexts/ToastContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useExport } from './hooks/useExport';
@@ -17,7 +17,9 @@ import { ConfirmModal } from './components/ConfirmModal';
 import { ParsedExcelData } from './utils/excelParser';
 import { CanvasElement, ElementGroup } from './lib/types';
 import { ExportJob } from './lib/exportJobService';
-import { saveTemplateWithThumbnail, importTemplateFromJSON } from './lib/templateService';
+import { saveTemplateWithThumbnail, importTemplateFromJSON, exportTemplateToJSON } from './lib/templateService';
+import type { Template } from './lib/templateService';
+import { InputModal } from './components/InputModal';
 import { saveWorkspace, clearWorkspace } from './lib/autoSaveService';
 import { WorkspaceSession } from './lib/sessionService';
 
@@ -49,6 +51,7 @@ function App() {
     danger?: boolean;
   } | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
 
   const toast = useToast();
   const currentWidth = orientation === 'portrait' ? pageSize.width : pageSize.height;
@@ -236,6 +239,77 @@ function App() {
     }
   };
 
+  const handleRenameDesign = () => {
+    setRenameModalOpen(true);
+  };
+
+  const submitRename = async (newName: string) => {
+    const current = fileName || 'Untitled';
+    if (!newName || newName === current) {
+      setRenameModalOpen(false);
+      return;
+    }
+
+    setFileName(newName);
+    try {
+      await saveWorkspace({
+        fileName: newName,
+        excelData,
+        pageSize: pageSize.name,
+        pageWidth: currentWidth,
+        pageHeight: currentHeight,
+        orientation,
+        elements,
+        groups,
+        currentRowIndex: previewRowIndex,
+      });
+      toast.success('Design renamed', `Name updated to "${newName}"`);
+    } catch (error) {
+      console.error('Failed to rename design:', error);
+      toast.error('Rename failed', 'Could not save the new name');
+    } finally {
+      setRenameModalOpen(false);
+    }
+  };
+
+  const handleExportTemplateJson = () => {
+    // Derive a sensible name without extension for the downloaded file
+    const baseName = (fileName || 'template').replace(/\.[^/.]+$/, '') || 'template';
+
+    // Build a minimal template object for export
+    const tempTemplate: Template = {
+      id: 'current',
+      name: baseName,
+      description: undefined,
+      tags: [],
+      pageSize: pageSize.name,
+      pageWidth: currentWidth,
+      pageHeight: currentHeight,
+      orientation,
+      elements,
+      groups,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      usageCount: 0,
+    };
+
+    const json = exportTemplateToJSON(tempTemplate);
+
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+
+    const sanitize = (name: string) => name.replace(/[^a-z0-9-_]+/gi, '_');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${sanitize(baseName)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast.success('Template exported', `Saved ${sanitize(baseName)}.json`);
+  };
+
   const handleDownloadFromHistory = (url: string) => {
     const mode = url.endsWith('.zip') ? 'all' : 'single';
     downloadFile(url, mode);
@@ -290,21 +364,23 @@ function App() {
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
-          const template = JSON.parse(event.target?.result as string);
-          if (template.elements) {
-            setElements(template.elements);
+          const parsed = JSON.parse(event.target?.result as string);
+          const tpl = parsed?.template ? parsed.template : parsed;
+
+          if (tpl.elements) {
+            setElements(tpl.elements);
           }
-          if (template.groups) {
-            setGroups(template.groups);
+          if (tpl.groups) {
+            setGroups(tpl.groups);
           }
-          if (template.pageSize) {
-            const foundPageSize = PAGE_SIZES.find(ps => ps.name === template.pageSize);
+          if (tpl.pageSize) {
+            const foundPageSize = PAGE_SIZES.find(ps => ps.name === tpl.pageSize);
             if (foundPageSize) {
               setPageSize(foundPageSize);
             }
           }
-          if (template.orientation) {
-            setOrientation(template.orientation);
+          if (tpl.orientation) {
+            setOrientation(tpl.orientation);
           }
           toast.success('Template loaded', 'Your template has been applied successfully.');
         } catch (error) {
@@ -430,6 +506,14 @@ function App() {
             </div>
             <div className="flex items-center gap-2">
               <button
+                onClick={handleRenameDesign}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                title="Rename Design"
+              >
+                <Pencil className="w-3 h-3" />
+                <span>Rename</span>
+              </button>
+              <button
                 onClick={handleChangeDataSource}
                 className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
                 title="Change Data Source"
@@ -460,6 +544,14 @@ function App() {
               >
                 <FileUp className="w-3 h-3" />
                 <span>Load</span>
+              </button>
+              <button
+                onClick={handleExportTemplateJson}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                title="Export Template as JSON"
+              >
+                <FileDown className="w-3 h-3" />
+                <span>Export JSON</span>
               </button>
               <button
                 onClick={() => setShowPreview(true)}
@@ -590,6 +682,18 @@ function App() {
             onStartBlank={handleStartBlank}
             onResumeSession={handleResumeSession}
             onClose={() => setShowStartupModal(false)}
+          />
+          <InputModal
+            isOpen={renameModalOpen}
+            title="Rename Design"
+            message="Choose a descriptive name for your current design."
+            label="Design name"
+            placeholder="Untitled"
+            defaultValue={fileName || 'Untitled'}
+            confirmText="Save"
+            cancelText="Cancel"
+            onSubmit={submitRename}
+            onCancel={() => setRenameModalOpen(false)}
           />
           {confirmModal && (
             <ConfirmModal
