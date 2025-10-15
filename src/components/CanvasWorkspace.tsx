@@ -492,7 +492,8 @@ export function CanvasWorkspace({
     setIsMouseDown(true);
 
     const positions = new Map<string, { x: number; y: number }>();
-    const elementsToMove = e.shiftKey && selectedElements.includes(elementId)
+    // If multiple elements are already selected, dragging any of them moves the whole selection
+    const elementsToMove = selectedElements.includes(elementId)
       ? selectedElements
       : [elementId];
 
