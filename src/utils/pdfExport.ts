@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { CanvasElement } from '../lib/types';
 import { formatMultipleBindings } from './dataFormatter';
 import { updateExportJob } from '../lib/exportJobService';
+import { calculateOverflowStyle } from './overflowRenderer';
 
 export interface ExportOptions {
   pageWidth: number;
@@ -129,7 +130,8 @@ async function renderCanvasToImage(
         text = String(dataRow[element.dataBinding]);
       }
 
-      const fontSize = element.style?.fontSize || 14;
+      const overflowStyle = calculateOverflowStyle(element, text);
+      const fontSize = overflowStyle.fontSize || element.style?.fontSize || 14;
       const fontFamily = element.style?.fontFamily || 'Arial';
       const fontWeight = element.style?.fontWeight || 'normal';
       const fontStyle = element.style?.fontStyle || 'normal';
@@ -140,7 +142,8 @@ async function renderCanvasToImage(
       const textAlign = element.style?.textAlign || 'left';
       const verticalAlign = element.style?.verticalAlign || 'middle';
       const padding = element.style?.padding || 0;
-      const lineHeight = fontSize * (element.style?.lineHeight || 1.5);
+      const baseLineHeight = overflowStyle.lineHeight || element.style?.lineHeight || 1.5;
+      const lineHeight = fontSize * baseLineHeight;
 
       let xPos = padding;
 
@@ -231,25 +234,58 @@ async function renderCanvasToImage(
           });
         }
       } else {
-        const lines = text.split('\n');
-        const totalHeight = lines.length * lineHeight;
-        let startY: number;
+        const overflowStrategy = element.overflowStrategy || 'wrap';
 
-        if (verticalAlign === 'top') {
-          startY = padding;
-          ctx.textBaseline = 'top';
-        } else if (verticalAlign === 'bottom') {
-          startY = element.height - totalHeight - padding;
-          ctx.textBaseline = 'top';
+        if (overflowStrategy === 'truncate') {
+          let startY: number;
+          if (verticalAlign === 'top') {
+            startY = padding;
+            ctx.textBaseline = 'top';
+          } else if (verticalAlign === 'bottom') {
+            startY = element.height - lineHeight - padding;
+            ctx.textBaseline = 'top';
+          } else {
+            startY = (element.height - lineHeight) / 2;
+            ctx.textBaseline = 'top';
+          }
+
+          const maxWidth = element.width - padding * 2;
+          let truncatedText = text;
+          let textWidth = ctx.measureText(truncatedText).width;
+
+          if (textWidth > maxWidth) {
+            while (textWidth > maxWidth && truncatedText.length > 0) {
+              truncatedText = truncatedText.slice(0, -1);
+              textWidth = ctx.measureText(truncatedText + '...').width;
+            }
+            truncatedText += '...';
+          }
+
+          ctx.fillText(truncatedText, xPos, startY, maxWidth);
         } else {
-          startY = (element.height - totalHeight) / 2;
-          ctx.textBaseline = 'top';
-        }
+          const lines = text.split('\n');
+          const availableHeight = element.height - padding * 2;
+          const maxLines = Math.floor(availableHeight / lineHeight);
+          const displayLines = lines.slice(0, maxLines);
+          const totalHeight = displayLines.length * lineHeight;
+          let startY: number;
 
-        lines.forEach((line, index) => {
-          const yPos = startY + (index * lineHeight);
-          ctx.fillText(line, xPos, yPos, element.width - padding * 2);
-        });
+          if (verticalAlign === 'top') {
+            startY = padding;
+            ctx.textBaseline = 'top';
+          } else if (verticalAlign === 'bottom') {
+            startY = element.height - totalHeight - padding;
+            ctx.textBaseline = 'top';
+          } else {
+            startY = (element.height - totalHeight) / 2;
+            ctx.textBaseline = 'top';
+          }
+
+          displayLines.forEach((line, index) => {
+            const yPos = startY + (index * lineHeight);
+            ctx.fillText(line, xPos, yPos, element.width - padding * 2);
+          });
+        }
       }
     }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { FileSpreadsheet, Eye, Download, Home, Database, Upload, FileDown, FileUp, History, Save } from 'lucide-react';
+import { FileSpreadsheet, Eye, Download, Database, Upload, FileUp, History, Save, Home } from 'lucide-react';
 import { useToast } from './contexts/ToastContext';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useExport } from './hooks/useExport';
 import { ExcelUploader } from './components/ExcelUploader';
 import { DataPreview } from './components/DataPreview';
@@ -11,17 +12,20 @@ import { DataEditModal } from './components/DataEditModal';
 import { RowSelectionModal } from './components/RowSelectionModal';
 import { ExportProgressModal } from './components/ExportProgressModal';
 import { ExportStatusPanel } from './components/ExportStatusPanel';
-import { TemplateSelector } from './components/TemplateSelector';
+import { StartupModal } from './components/StartupModal';
+import { ConfirmModal } from './components/ConfirmModal';
 import { ParsedExcelData } from './utils/excelParser';
 import { CanvasElement, ElementGroup } from './lib/types';
 import { ExportJob } from './lib/exportJobService';
-import { Template, saveTemplateWithThumbnail } from './lib/templateService';
-import { saveWorkspace, loadWorkspace, clearWorkspace } from './lib/autoSaveService';
+import { saveTemplateWithThumbnail, importTemplateFromJSON } from './lib/templateService';
+import { saveWorkspace, clearWorkspace } from './lib/autoSaveService';
+import { WorkspaceSession } from './lib/sessionService';
 
-type Step = 'home' | 'upload' | 'preview' | 'canvas';
+type Step = 'upload' | 'preview' | 'canvas';
 
 function App() {
-  const [step, setStep] = useState<Step>('home');
+  const [step, setStep] = useState<Step | null>(null);
+  const [showStartupModal, setShowStartupModal] = useState(true);
   const [excelData, setExcelData] = useState<ParsedExcelData | null>(null);
   const [fileName, setFileName] = useState('');
   const [pageSize, setPageSize] = useState<PageSize>(PAGE_SIZES[0]);
@@ -35,7 +39,16 @@ function App() {
   const [showExportProgress, setShowExportProgress] = useState(false);
   const [showExportStatus, setShowExportStatus] = useState(false);
   const [currentExportJob, setCurrentExportJob] = useState<ExportJob | null>(null);
-  const [hasAutoSave, setHasAutoSave] = useState(false);
+  const [isUserInteracting, setIsUserInteracting] = useState(false);
+  const [isCanvasInteracting, setIsCanvasInteracting] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    danger?: boolean;
+  } | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const toast = useToast();
   const currentWidth = orientation === 'portrait' ? pageSize.width : pageSize.height;
@@ -50,41 +63,47 @@ function App() {
   });
 
   useEffect(() => {
-    checkAutoSave();
-  }, []);
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges && (elements.length > 0 || excelData)) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges, elements, excelData]);
 
   useEffect(() => {
-    if (step === 'canvas' && excelData) {
-      autoSave();
+    if (elements.length > 0 || excelData) {
+      setHasUnsavedChanges(true);
     }
-  }, [step, excelData, elements, groups, pageSize, orientation, previewRowIndex]);
+  }, [elements, excelData]);
 
-  const checkAutoSave = async () => {
-    const savedState = await loadWorkspace();
-    if (savedState && savedState.excelData) {
-      setHasAutoSave(true);
-      if (confirm('Would you like to restore your previous session?')) {
-        restoreAutoSave(savedState);
-      } else {
-        await clearWorkspace();
-      }
+  useEffect(() => {
+    if (step === 'canvas' && excelData && !isUserInteracting) {
+      const timeoutId = setTimeout(() => {
+        autoSave();
+      }, 500);
+      return () => clearTimeout(timeoutId);
     }
-  };
+  }, [step, excelData, elements, groups, pageSize, orientation, previewRowIndex, isUserInteracting]);
 
-  const restoreAutoSave = async (savedState: any) => {
-    setFileName(savedState.fileName);
-    setExcelData(savedState.excelData);
+  const handleResumeSession = async (session: WorkspaceSession) => {
+    setFileName(session.fileName);
+    setExcelData(session.excelData);
 
-    const restoredPageSize = PAGE_SIZES.find(ps => ps.name === savedState.pageSize) || PAGE_SIZES[0];
+    const restoredPageSize = PAGE_SIZES.find(ps => ps.name === session.pageSize) || PAGE_SIZES[0];
     setPageSize(restoredPageSize);
-    setOrientation(savedState.orientation);
-    setElements(savedState.elements);
-    setGroups(savedState.groups);
-    setPreviewRowIndex(savedState.currentRowIndex);
+    setOrientation(session.orientation);
+    setElements(session.elements);
+    setGroups(session.groups);
+    setPreviewRowIndex(session.currentRowIndex);
     setStep('canvas');
 
     toast.success('Session restored', 'Your previous work has been restored');
   };
+
 
   const autoSave = async () => {
     if (!excelData) return;
@@ -102,23 +121,46 @@ function App() {
     });
   };
 
-  const handleSelectTemplate = (template: Template) => {
-    setElements(template.elements);
-    setGroups(template.groups);
-
-    const templatePageSize = PAGE_SIZES.find(ps => ps.name === template.pageSize) || PAGE_SIZES[0];
-    setPageSize(templatePageSize);
-    setOrientation(template.orientation);
-
-    setStep('upload');
-  };
-
   const handleStartBlank = () => {
     setStep('upload');
   };
 
   const handleUploadData = () => {
     setStep('upload');
+  };
+
+  const handleImportTemplate = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const json = event.target?.result as string;
+            const imported = await importTemplateFromJSON(json);
+            setElements(imported.elements);
+            setGroups(imported.groups);
+            const templatePageSize = PAGE_SIZES.find(ps => ps.name === imported.pageSize) || PAGE_SIZES[0];
+            setPageSize(templatePageSize);
+            setOrientation(imported.orientation);
+            setStep('upload');
+            toast.success('Template imported', `"${imported.name}" has been imported`);
+          } catch (error) {
+            toast.error('Failed to import template', 'Invalid template file');
+          }
+        };
+        reader.readAsText(file);
+      } catch (error) {
+        console.error('Failed to import template:', error);
+        toast.error('Failed to import template', 'Could not read the template file');
+      }
+    };
+    input.click();
   };
 
   const handleDataParsed = (data: ParsedExcelData, name: string) => {
@@ -138,16 +180,25 @@ function App() {
   };
 
   const handleStartOver = async () => {
-    if (confirm('Are you sure you want to start over? Unsaved changes will be lost.')) {
-      await clearWorkspace();
-      setStep('home');
-      setExcelData(null);
-      setFileName('');
-      setElements([]);
-      setGroups([]);
-      setPageSize(PAGE_SIZES[0]);
-      setOrientation('portrait');
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Start Over',
+      message: 'Are you sure you want to start over? Unsaved changes will be lost.',
+      onConfirm: async () => {
+        await clearWorkspace();
+        setShowStartupModal(true);
+        setStep(null);
+        setExcelData(null);
+        setFileName('');
+        setElements([]);
+        setGroups([]);
+        setPageSize(PAGE_SIZES[0]);
+        setOrientation('portrait');
+        setHasUnsavedChanges(false);
+        setConfirmModal(null);
+      },
+      danger: true,
+    });
   };
 
   const handleExportSingle = () => {
@@ -206,7 +257,7 @@ function App() {
   };
 
   const handleSaveTemplate = async () => {
-    const templateName = prompt('Enter a name for this template:');
+    const templateName = window.prompt('Enter a name for this template:');
     if (!templateName) return;
 
     try {
@@ -221,6 +272,7 @@ function App() {
       });
 
       toast.success('Template saved', `"${templateName}" has been saved successfully.`);
+      setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Failed to save template:', error);
       toast.error('Failed to save template', 'Could not save the template');
@@ -285,114 +337,163 @@ function App() {
     input.click();
   };
 
-  if (step === 'home') {
+  useKeyboardShortcuts({
+    shortcuts: [
+      {
+        key: 's',
+        ctrl: true,
+        handler: () => {
+          if (step === 'canvas') {
+            handleSaveTemplate();
+          }
+        },
+        description: 'Save template',
+        enabled: step === 'canvas',
+      },
+      {
+        key: 'p',
+        ctrl: true,
+        handler: () => {
+          if (step === 'canvas') {
+            setShowPreview(true);
+          }
+        },
+        description: 'Preview',
+        enabled: step === 'canvas',
+      },
+      {
+        key: 'e',
+        ctrl: true,
+        handler: () => {
+          if (step === 'canvas') {
+            handleExportSingle();
+          }
+        },
+        description: 'Export',
+        enabled: step === 'canvas',
+      },
+    ],
+    enabled: true,
+  });
+
+  if (!step) {
     return (
-      <TemplateSelector
-        onSelectTemplate={handleSelectTemplate}
-        onStartBlank={handleStartBlank}
-        onUploadData={handleUploadData}
-      />
+      <>
+        <StartupModal
+          isOpen={showStartupModal}
+          onUploadData={handleUploadData}
+          onImportTemplate={handleImportTemplate}
+          onStartBlank={handleStartBlank}
+          onResumeSession={handleResumeSession}
+          onClose={() => setShowStartupModal(false)}
+        />
+        <div className="h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center">
+          <div className="text-center">
+            <FileSpreadsheet className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Excel to PDF Builder</h1>
+            <p className="text-gray-600">Loading...</p>
+          </div>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden" style={{ pointerEvents: isCanvasInteracting ? 'none' : 'auto' }}>
       <header className="bg-white shadow-sm border-b flex-shrink-0">
-        <div className="px-6 py-4">
+        <div className="px-4 py-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <FileSpreadsheet className="w-8 h-8 text-blue-600" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-800">
-                  Excel to PDF Builder
-                </h1>
-                <p className="text-sm text-gray-600">
-                  Import data, design templates, and export to PDF
-                </p>
-              </div>
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+              <h1 className="text-base font-bold text-gray-800">
+                Excel to PDF Builder
+              </h1>
             </div>
 
             {step !== 'upload' && (
               <button
                 onClick={handleStartOver}
-                className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                title="Start Over"
               >
-                <Home className="w-4 h-4" />
-                Start Over
+                <Home className="w-3.5 h-3.5" />
+                <span>Start Over</span>
               </button>
             )}
           </div>
         </div>
 
         {step === 'canvas' && (
-          <div className="px-6 py-3 bg-gray-50 border-t flex items-center justify-between">
-            <div className="text-sm text-gray-600">
+          <div className="px-4 py-1.5 bg-gray-50 border-t flex items-center justify-between">
+            <div className="text-xs text-gray-600">
               <span className="font-medium">{fileName}</span> • {excelData?.rowCount} rows
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <button
                 onClick={handleChangeDataSource}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
                 title="Change Data Source"
               >
-                <Upload className="w-4 h-4" />
-                Change Data
+                <Upload className="w-3 h-3" />
+                <span>Data</span>
               </button>
               <button
                 onClick={() => setShowDataEdit(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                title="Edit Data"
               >
-                <Database className="w-4 h-4" />
-                Edit Data
+                <Database className="w-3 h-3" />
+                <span>Edit</span>
               </button>
               <button
                 onClick={handleSaveTemplate}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
                 title="Save as Template"
               >
-                <Save className="w-4 h-4" />
-                Save Template
+                <Save className="w-3 h-3" />
+                <span>Save</span>
               </button>
               <button
                 onClick={handleLoadTemplate}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
                 title="Load Template"
               >
-                <FileUp className="w-4 h-4" />
-                Load
+                <FileUp className="w-3 h-3" />
+                <span>Load</span>
               </button>
               <button
                 onClick={() => setShowPreview(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                title="Preview"
               >
-                <Eye className="w-4 h-4" />
-                Preview
+                <Eye className="w-3 h-3" />
+                <span>Preview</span>
               </button>
               <button
                 onClick={() => setShowExportStatus(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
                 title="View Export History"
               >
-                <History className="w-4 h-4" />
-                History
+                <History className="w-3 h-3" />
+                <span>History</span>
               </button>
               <button
                 onClick={handleExportSingle}
                 disabled={isExporting}
-                className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Export Single Record"
               >
-                <Download className="w-4 h-4" />
-                {isExporting ? 'Exporting...' : 'Export Single'}
+                <Download className="w-3 h-3" />
+                <span>{isExporting ? 'Exporting...' : 'Single'}</span>
               </button>
               <button
                 onClick={handleExportAll}
                 disabled={isExporting}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Export All Records as ZIP"
               >
-                <Download className="w-4 h-4" />
-                {isExporting ? 'Exporting...' : 'Export All'}
+                <Download className="w-3 h-3" />
+                <span>{isExporting ? 'Exporting...' : 'All'}</span>
               </button>
             </div>
           </div>
@@ -425,7 +526,7 @@ function App() {
               onSizeChange={setPageSize}
               onOrientationChange={setOrientation}
             />
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-hidden" style={{ pointerEvents: 'auto' }}>
               <CanvasWorkspace
                 width={currentWidth}
                 height={currentHeight}
@@ -435,6 +536,8 @@ function App() {
                 data={excelData.data}
                 onElementsChange={setElements}
                 onGroupsChange={setGroups}
+                onInteractionChange={setIsUserInteracting}
+                onCanvasInteractionChange={setIsCanvasInteracting}
               />
             </div>
           </div>
@@ -480,6 +583,24 @@ function App() {
             onDownload={handleDownloadFromHistory}
             onViewProgress={handleViewProgress}
           />
+          <StartupModal
+            isOpen={showStartupModal}
+            onUploadData={handleUploadData}
+            onImportTemplate={handleImportTemplate}
+            onStartBlank={handleStartBlank}
+            onResumeSession={handleResumeSession}
+            onClose={() => setShowStartupModal(false)}
+          />
+          {confirmModal && (
+            <ConfirmModal
+              isOpen={confirmModal.isOpen}
+              title={confirmModal.title}
+              message={confirmModal.message}
+              onConfirm={confirmModal.onConfirm}
+              onCancel={() => setConfirmModal(null)}
+              danger={confirmModal.danger}
+            />
+          )}
         </>
       )}
     </div>

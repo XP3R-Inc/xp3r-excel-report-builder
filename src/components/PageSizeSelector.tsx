@@ -26,16 +26,16 @@ export function PageSizeSelector({
   onOrientationChange,
 }: PageSizeSelectorProps) {
   return (
-    <div className="flex items-center gap-4 p-4 bg-white border-b">
-      <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-gray-700">Page Size:</label>
+    <div className="flex items-center gap-3 px-3 py-1.5 bg-white border-b">
+      <div className="flex items-center gap-1.5">
+        <label className="text-xs font-medium text-gray-700">Page:</label>
         <select
           value={selectedSize.name}
           onChange={(e) => {
             const size = PAGE_SIZES.find((s) => s.name === e.target.value);
             if (size) onSizeChange(size);
           }}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
           {PAGE_SIZES.map((size) => (
             <option key={size.name} value={size.name}>
@@ -45,12 +45,11 @@ export function PageSizeSelector({
         </select>
       </div>
 
-      <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-gray-700">Orientation:</label>
-        <div className="flex gap-1 border border-gray-300 rounded-lg p-0.5">
+      <div className="flex items-center gap-1.5">
+        <div className="flex gap-0.5 border border-gray-300 rounded p-0.5">
           <button
             onClick={() => onOrientationChange('portrait')}
-            className={`px-3 py-1.5 text-sm rounded transition-colors ${
+            className={`px-2 py-0.5 text-xs rounded transition-colors ${
               orientation === 'portrait'
                 ? 'bg-blue-600 text-white'
                 : 'text-gray-700 hover:bg-gray-100'
@@ -60,7 +59,7 @@ export function PageSizeSelector({
           </button>
           <button
             onClick={() => onOrientationChange('landscape')}
-            className={`px-3 py-1.5 text-sm rounded transition-colors ${
+            className={`px-2 py-0.5 text-xs rounded transition-colors ${
               orientation === 'landscape'
                 ? 'bg-blue-600 text-white'
                 : 'text-gray-700 hover:bg-gray-100'
@@ -71,7 +70,7 @@ export function PageSizeSelector({
         </div>
       </div>
 
-      <div className="ml-auto text-sm text-gray-600">
+      <div className="ml-auto text-xs text-gray-600">
         {orientation === 'portrait'
           ? `${selectedSize.width} × ${selectedSize.height}px`
           : `${selectedSize.height} × ${selectedSize.width}px`}

@@ -38,6 +38,8 @@ interface PropertiesPanelProps {
   onDelete: () => void;
   pageWidth?: number;
   pageHeight?: number;
+  onInteractionStart?: () => void;
+  onInteractionEnd?: () => void;
 }
 
 export function PropertiesPanel({
@@ -48,6 +50,8 @@ export function PropertiesPanel({
   onDelete,
   pageWidth,
   pageHeight,
+  onInteractionStart,
+  onInteractionEnd,
 }: PropertiesPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentDataRow, setCurrentDataRow] = useState(0);
@@ -139,40 +143,46 @@ export function PropertiesPanel({
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-shrink-0 sticky top-0 bg-white z-10 border-b border-gray-200 pb-3">
-        <div className="flex items-center justify-between mb-3 pt-4 px-3">
-          <h3 className="text-sm font-semibold text-gray-700">Properties</h3>
-          <div className="flex items-center gap-1">
+    <div
+      className="flex flex-col h-full"
+      onWheel={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      style={{ touchAction: 'auto' }}
+    >
+      <div className="flex-shrink-0 sticky top-0 bg-white z-10 border-b border-gray-200 pb-2">
+        <div className="flex items-center justify-between mb-2 pt-2 px-2">
+          <h3 className="text-xs font-semibold text-gray-700">Properties</h3>
+          <div className="flex items-center gap-0.5">
             <button
               onClick={() => onUpdate({ hidden: !element.hidden })}
-              className={`p-1.5 rounded transition-colors ${
+              className={`p-1 rounded transition-colors ${
                 element.hidden ? 'text-amber-600 bg-amber-50' : 'text-gray-600 hover:bg-gray-100'
               }`}
               title={element.hidden ? 'Show' : 'Hide'}
             >
-              {element.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {element.hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             </button>
             <button
               onClick={() => onUpdate({ locked: !element.locked })}
-              className={`p-1.5 rounded transition-colors ${
+              className={`p-1 rounded transition-colors ${
                 element.locked ? 'text-blue-600 bg-blue-50' : 'text-gray-600 hover:bg-gray-100'
               }`}
               title={element.locked ? 'Unlock' : 'Lock'}
             >
-              {element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+              {element.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
             </button>
             <button
               onClick={onDelete}
-              className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+              className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
               title="Delete"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
-        <div className="px-3">
+        <div className="px-2">
           <PropertySearch
             value={searchQuery}
             onChange={setSearchQuery}
@@ -181,7 +191,11 @@ export function PropertiesPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 pb-3" style={{ scrollBehavior: 'auto' }}>
+      <div
+        className="flex-1 overflow-y-auto px-2 pb-2"
+        onWheelCapture={(e) => e.stopPropagation()}
+        onScroll={(e) => e.stopPropagation()}
+      >
         <AccordionSection
           title="Position & Size"
           icon={<Move className="w-4 h-4" />}
@@ -195,12 +209,16 @@ export function PropertiesPanel({
               value={element.x}
               onChange={(x) => onUpdate({ x })}
               unit="px"
+              onDragStart={onInteractionStart}
+              onDragEnd={onInteractionEnd}
             />
             <ScrubbableInput
               label="Y Position"
               value={element.y}
               onChange={(y) => onUpdate({ y })}
               unit="px"
+              onDragStart={onInteractionStart}
+              onDragEnd={onInteractionEnd}
             />
           </div>
 
@@ -224,6 +242,8 @@ export function PropertiesPanel({
             min={0}
             max={360}
             unit="°"
+            onDragStart={onInteractionStart}
+            onDragEnd={onInteractionEnd}
           />
 
           <ScrubbableInput
@@ -235,6 +255,8 @@ export function PropertiesPanel({
             min={0}
             max={100}
             unit="%"
+            onDragStart={onInteractionStart}
+            onDragEnd={onInteractionEnd}
           />
         </AccordionSection>
 
@@ -253,9 +275,6 @@ export function PropertiesPanel({
               <textarea
                 value={element.content || ''}
                 onChange={(e) => onUpdate({ content: e.target.value })}
-                onFocus={(e) => {
-                  e.target.scrollIntoView = () => {};
-                }}
                 rows={3}
                 className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -271,6 +290,8 @@ export function PropertiesPanel({
                 min={6}
                 max={200}
                 unit="px"
+                onDragStart={onInteractionStart}
+                onDragEnd={onInteractionEnd}
               />
               <ScrubbableInput
                 label="Line Height"
@@ -281,6 +302,8 @@ export function PropertiesPanel({
                 min={0.5}
                 max={5}
                 step={0.1}
+                onDragStart={onInteractionStart}
+                onDragEnd={onInteractionEnd}
               />
             </div>
 
@@ -291,9 +314,6 @@ export function PropertiesPanel({
                 onChange={(e) =>
                   onUpdate({ style: { ...element.style, fontFamily: e.target.value } })
                 }
-                onFocus={(e) => {
-                  e.target.scrollIntoView = () => {};
-                }}
                 className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="Arial">Arial</option>
@@ -432,6 +452,8 @@ export function PropertiesPanel({
             }
             min={0}
             unit="px"
+            onDragStart={onInteractionStart}
+            onDragEnd={onInteractionEnd}
           />
 
           <ColorPicker

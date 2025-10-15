@@ -1,6 +1,8 @@
 import { X } from 'lucide-react';
+import { useEffect } from 'react';
 import { CanvasElement } from '../lib/types';
 import { formatMultipleBindings } from '../utils/dataFormatter';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 
 interface PreviewModalProps {
   isOpen: boolean;
@@ -23,13 +25,48 @@ export function PreviewModal({
   currentRowIndex,
   onRowChange,
 }: PreviewModalProps) {
+  useKeyboardShortcuts({
+    shortcuts: [
+      {
+        key: 'Escape',
+        handler: onClose,
+        description: 'Close preview',
+      },
+      {
+        key: 'ArrowLeft',
+        handler: () => {
+          if (currentRowIndex > 0) {
+            onRowChange(currentRowIndex - 1);
+          }
+        },
+        description: 'Previous row',
+      },
+      {
+        key: 'ArrowRight',
+        handler: () => {
+          if (currentRowIndex < data.length - 1) {
+            onRowChange(currentRowIndex + 1);
+          }
+        },
+        description: 'Next row',
+      },
+    ],
+    enabled: isOpen,
+  });
+
   if (!isOpen) return null;
 
   const currentRow = data[currentRowIndex] || {};
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold text-gray-800">Preview Document</h2>

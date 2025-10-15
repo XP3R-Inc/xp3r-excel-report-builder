@@ -184,7 +184,13 @@ export function LayersPanel({
   });
 
   return (
-    <div className="w-64 bg-white border-l border-gray-200 flex flex-col h-full">
+    <div
+      className="w-64 bg-white border-l border-gray-200 flex flex-col h-full"
+      onWheel={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      style={{ touchAction: 'auto' }}
+    >
       <div className="px-4 py-3 border-b border-gray-200 space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-sm flex items-center gap-2">
@@ -308,7 +314,7 @@ export function LayersPanel({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto" style={{ scrollBehavior: 'auto' }}>
+      <div className="flex-1 overflow-y-auto" style={{ scrollBehavior: 'smooth' }}>
         {groups.filter(g => groupedElements.has(g.id)).map(group => {
           const groupEls = groupedElements.get(group.id) || [];
           const isExpanded = expandedGroups.has(group.id);

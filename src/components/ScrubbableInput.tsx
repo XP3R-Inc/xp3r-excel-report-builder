@@ -9,6 +9,8 @@ interface ScrubbableInputProps {
   step?: number;
   unit?: string;
   className?: string;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }
 
 export function ScrubbableInput({
@@ -20,6 +22,8 @@ export function ScrubbableInput({
   step = 1,
   unit = '',
   className = '',
+  onDragStart,
+  onDragEnd,
 }: ScrubbableInputProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -37,10 +41,12 @@ export function ScrubbableInput({
   const handleLabelMouseDown = (e: React.MouseEvent) => {
     if (isEditing) return;
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(true);
     startXRef.current = e.clientX;
     startValueRef.current = value;
     document.body.style.cursor = 'ew-resize';
+    onDragStart?.();
   };
 
   useEffect(() => {
@@ -61,6 +67,7 @@ export function ScrubbableInput({
     const handleMouseUp = () => {
       setIsDragging(false);
       document.body.style.cursor = '';
+      onDragEnd?.();
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -115,9 +122,8 @@ export function ScrubbableInput({
           value={Math.round(value * 100) / 100}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          onFocus={(e) => {
+          onFocus={() => {
             setIsEditing(true);
-            e.target.scrollIntoView = () => {};
           }}
           onBlur={() => setIsEditing(false)}
           min={min}

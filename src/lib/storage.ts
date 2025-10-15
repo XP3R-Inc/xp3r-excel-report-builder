@@ -77,7 +77,10 @@ export interface AutoSaveState {
   elements: CanvasElement[];
   groups: ElementGroup[];
   currentRowIndex: number;
+  thumbnail?: string;
   savedAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 class IndexedDBStorage {
