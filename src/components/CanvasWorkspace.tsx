@@ -7,6 +7,7 @@ import { AlignmentToolbar } from './AlignmentToolbar';
 import { LayersPanel } from './LayersPanel';
 import { MemoizedCanvasElement } from './CanvasElement';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
+import { GridGuideModal } from './GridGuideModal';
 import { alignElements } from '../utils/alignment';
 import { estimateTextOverflow } from '../utils/textOverflow';
 import { createBoundaryConstraints, constrainElementPosition, constrainElementResize, constrainGroupPosition } from '../utils/boundaries';
@@ -61,6 +62,14 @@ export function CanvasWorkspace({
   const [isTrackpadPanning, setIsTrackpadPanning] = useState(false);
   const [isTrackpadZooming, setIsTrackpadZooming] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [showGridModal, setShowGridModal] = useState(false);
+  // Rulers and guides state
+  const [verticalGuides, setVerticalGuides] = useState<number[]>([]);
+  const [horizontalGuides, setHorizontalGuides] = useState<number[]>([]);
+  const [draggingGuide, setDraggingGuide] = useState<null | { type: 'v' | 'h'; index: number | null }>(null);
+  const [dragGuidePos, setDragGuidePos] = useState<number | null>(null);
+  const [snapActive, setSnapActive] = useState<{ v: number | null; h: number | null }>({ v: null, h: null });
+  const [hoveredGuide, setHoveredGuide] = useState<null | { type: 'v' | 'h'; index: number | null }>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const propertiesPanelRef = useRef<HTMLDivElement>(null);
@@ -121,6 +130,26 @@ export function CanvasWorkspace({
   };
 
   useEffect(() => {
+    const openHandler = () => setShowGridModal(true);
+    // Custom event from top toolbar to open grid modal
+    window.addEventListener('open-grid-modal' as any, openHandler as any);
+    return () => {
+      window.removeEventListener('open-grid-modal' as any, openHandler as any);
+    };
+  }, []);
+
+  useEffect(() => {
+    const clearHandler = () => {
+      setVerticalGuides([]);
+      setHorizontalGuides([]);
+    };
+    window.addEventListener('clear-guides' as any, clearHandler as any);
+    return () => {
+      window.removeEventListener('clear-guides' as any, clearHandler as any);
+    };
+  }, []);
+
+  useEffect(() => {
     elementsRef.current = elements;
     widthRef.current = width;
     heightRef.current = height;
@@ -132,6 +161,41 @@ export function CanvasWorkspace({
   const selectedElement = selectedElements.length === 1
     ? elements.find((el) => el.id === selectedElements[0])
     : null;
+
+  // Coordinate helpers based on current pan/zoom and container
+  const getCanvasOrigin = () => {
+    const container = containerRef.current;
+    const containerWidth = container?.clientWidth || 0;
+    const containerHeight = container?.clientHeight || 0;
+    const originX = containerWidth / 2 - (width * zoom) / 2 + panOffset.x;
+    const originY = containerHeight / 2 - (height * zoom) / 2 + panOffset.y;
+    return { originX, originY, containerWidth, containerHeight };
+  };
+
+  const screenXFromCanvas = (x: number) => {
+    const { originX } = getCanvasOrigin();
+    // Screen position relative to container, used for absolutely-positioned children
+    return originX + x * zoom;
+  };
+  const screenYFromCanvas = (y: number) => {
+    const { originY } = getCanvasOrigin();
+    return originY + y * zoom;
+  };
+  const canvasXFromScreen = (sx: number) => {
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    const containerLeft = containerRect?.left || 0;
+    const { originX } = getCanvasOrigin();
+    // Convert viewport X (clientX) to container-local X first
+    const localX = sx - containerLeft;
+    return (localX - originX) / zoom;
+  };
+  const canvasYFromScreen = (sy: number) => {
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    const containerTop = containerRect?.top || 0;
+    const { originY } = getCanvasOrigin();
+    const localY = sy - containerTop;
+    return (localY - originY) / zoom;
+  };
 
   const addTextElement = () => {
     const newElement: CanvasElement = {
@@ -320,6 +384,56 @@ export function CanvasWorkspace({
     const aligned = alignElements(elements, selectedElements, type, width, height);
     onElementsChange(aligned);
     addToHistory(aligned);
+  };
+
+  const handleDistribute = (axis: 'horizontal' | 'vertical') => {
+    if (selectedElements.length < 3) return;
+    const selected = elements.filter(el => selectedElements.includes(el.id)).sort((a, b) => (axis === 'horizontal' ? a.x - b.x : a.y - b.y));
+    if (selected.length < 3) return;
+
+    const first = selected[0];
+    const last = selected[selected.length - 1];
+    const totalSpan = axis === 'horizontal' ? (last.x + last.width) - first.x : (last.y + last.height) - first.y;
+    const innerSpan = totalSpan - (axis === 'horizontal' ? first.width + last.width : first.height + last.height);
+    const gaps = selected.length - 1;
+    const gapSize = innerSpan / gaps;
+
+    const updated = elements.map(el => {
+      const idx = selected.findIndex(s => s.id === el.id);
+      if (idx === -1) return el;
+      if (idx === 0 || idx === selected.length - 1) return el; // first and last remain anchors
+      if (axis === 'horizontal') {
+        const newX = first.x + first.width + gapSize * idx + selected.slice(1, idx).reduce((sum, s) => sum + s.width, 0);
+        return { ...el, x: Math.round(newX) };
+      } else {
+        const newY = first.y + first.height + gapSize * idx + selected.slice(1, idx).reduce((sum, s) => sum + s.height, 0);
+        return { ...el, y: Math.round(newY) };
+      }
+    });
+
+    onElementsChange(updated);
+    addToHistory(updated);
+  };
+
+  const handleAddGuide = (orientation: 'vertical' | 'horizontal') => {
+    if (orientation === 'vertical') {
+      const x = Math.round(width / 2);
+      setVerticalGuides(prev => [...prev, x].sort((a, b) => a - b));
+    } else {
+      const y = Math.round(height / 2);
+      setHorizontalGuides(prev => [...prev, y].sort((a, b) => a - b));
+    }
+  };
+
+  const applyGridGuides = (rows: number, cols: number) => {
+    const v: number[] = [];
+    const h: number[] = [];
+    const colWidth = width / cols;
+    const rowHeight = height / rows;
+    for (let c = 1; c < cols; c++) v.push(Math.round(c * colWidth));
+    for (let r = 1; r < rows; r++) h.push(Math.round(r * rowHeight));
+    setVerticalGuides(v);
+    setHorizontalGuides(h);
   };
 
   const handleSelectFromLayer = (id: string, multi: boolean) => {
@@ -636,6 +750,17 @@ export function CanvasWorkspace({
     const handleGlobalMouseMove = (e: MouseEvent) => {
       if (!canvasRef.current) return;
 
+      // Update dragging guide position when dragging from rulers or guide lines
+      if (draggingGuide) {
+        if (draggingGuide.type === 'v') {
+          const cx = canvasXFromScreen(e.clientX);
+          setDragGuidePos(cx);
+        } else {
+          const cy = canvasYFromScreen(e.clientY);
+          setDragGuidePos(cy);
+        }
+      }
+
       if (dragStartMousePos.current && !isResizing && dragStartPositions.size > 0) {
         const deltaX = e.clientX - dragStartMousePos.current.x;
         const deltaY = e.clientY - dragStartMousePos.current.y;
@@ -654,11 +779,11 @@ export function CanvasWorkspace({
 
           rafRef.current = requestAnimationFrame(() => {
             const constraints = createBoundaryConstraints(widthRef.current, heightRef.current);
-            const scaledDeltaX = deltaX / zoom;
-            const scaledDeltaY = deltaY / zoom;
+            let scaledDeltaX = deltaX / zoom;
+            let scaledDeltaY = deltaY / zoom;
 
             const draggedElementIds = Array.from(dragStartPositions.keys());
-            const constrainedDelta = constrainGroupPosition(
+            let constrainedDelta = constrainGroupPosition(
               elementsRef.current,
               draggedElementIds,
               scaledDeltaX,
@@ -666,7 +791,65 @@ export function CanvasWorkspace({
               constraints
             );
 
+            // Snap to guides using first dragged element's box
+            let vSnap: number | null = null;
+            let hSnap: number | null = null;
+            if (draggedElementIds.length > 0) {
+              const firstId = draggedElementIds[0];
+              const startPos = dragStartPositions.get(firstId);
+              const el = elementsRef.current.find(el => el.id === firstId);
+              if (startPos && el) {
+                const SNAP_PX = 5; // px tolerance on screen
+                const snapTol = SNAP_PX / zoom; // convert to canvas units
+
+                // Horizontal snapping (vertical guides)
+                const proposedLeft = startPos.x + constrainedDelta.x;
+                const proposedRight = proposedLeft + el.width;
+                const proposedCenterX = proposedLeft + el.width / 2;
+
+                let bestDX = 0;
+                let bestDiff = snapTol + 1;
+                for (const gx of verticalGuides) {
+                  const diffs = [gx - proposedLeft, gx - proposedCenterX, gx - proposedRight];
+                  for (const d of diffs) {
+                    const ad = Math.abs(d);
+                    if (ad < bestDiff) {
+                      bestDiff = ad;
+                      bestDX = d;
+                      vSnap = gx;
+                    }
+                  }
+                }
+                if (bestDiff <= snapTol) {
+                  constrainedDelta = { x: constrainedDelta.x + bestDX, y: constrainedDelta.y };
+                }
+
+                // Vertical snapping (horizontal guides)
+                const proposedTop = startPos.y + constrainedDelta.y;
+                const proposedBottom = proposedTop + el.height;
+                const proposedCenterY = proposedTop + el.height / 2;
+
+                let bestDY = 0;
+                bestDiff = snapTol + 1;
+                for (const gy of horizontalGuides) {
+                  const diffs = [gy - proposedTop, gy - proposedCenterY, gy - proposedBottom];
+                  for (const d of diffs) {
+                    const ad = Math.abs(d);
+                    if (ad < bestDiff) {
+                      bestDiff = ad;
+                      bestDY = d;
+                      hSnap = gy;
+                    }
+                  }
+                }
+                if (bestDiff <= snapTol) {
+                  constrainedDelta = { x: constrainedDelta.x, y: constrainedDelta.y + bestDY };
+                }
+              }
+            }
+
             setTempDragOffset({ x: constrainedDelta.x, y: constrainedDelta.y });
+            setSnapActive({ v: vSnap, h: hSnap });
           });
         }
       }
@@ -732,6 +915,43 @@ export function CanvasWorkspace({
         rafRef.current = null;
       }
 
+      // Finalize guide dragging/creation/removal
+      if (draggingGuide) {
+        if (dragGuidePos !== null) {
+          if (draggingGuide.type === 'v') {
+            if (dragGuidePos >= 0 && dragGuidePos <= width) {
+              if (draggingGuide.index === null) {
+                setVerticalGuides(prev => [...prev, dragGuidePos].sort((a, b) => a - b));
+              } else {
+                setVerticalGuides(prev => {
+                  const next = [...prev];
+                  next[draggingGuide.index!] = dragGuidePos;
+                  return next;
+                });
+              }
+            } else if (draggingGuide.index !== null) {
+              setVerticalGuides(prev => prev.filter((_, i) => i !== draggingGuide.index));
+            }
+          } else {
+            if (dragGuidePos >= 0 && dragGuidePos <= height) {
+              if (draggingGuide.index === null) {
+                setHorizontalGuides(prev => [...prev, dragGuidePos].sort((a, b) => a - b));
+              } else {
+                setHorizontalGuides(prev => {
+                  const next = [...prev];
+                  next[draggingGuide.index!] = dragGuidePos;
+                  return next;
+                });
+              }
+            } else if (draggingGuide.index !== null) {
+              setHorizontalGuides(prev => prev.filter((_, i) => i !== draggingGuide.index));
+            }
+          }
+        }
+        setDraggingGuide(null);
+        setDragGuidePos(null);
+      }
+
       if (hasDraggedRef.current && dragStartPositions.size > 0 && tempDragOffset) {
         const deltaX = tempDragOffset.x;
         const deltaY = tempDragOffset.y;
@@ -773,6 +993,7 @@ export function CanvasWorkspace({
       dragStartMousePos.current = null;
       setIsMouseDown(false);
       clickStartPositionRef.current = null;
+      setSnapActive({ v: null, h: null });
     };
 
     if (isDragging || isResizing || isMouseDown) {
@@ -1340,6 +1561,9 @@ export function CanvasWorkspace({
         onGroup={handleCreateGroup}
         onUngroup={handleUngroup}
         hasGroup={hasGroupSelected}
+        onDistribute={handleDistribute}
+        onAddGuide={handleAddGuide}
+        onOpenGrid={() => setShowGridModal(true)}
       />
       <div className="flex flex-1 overflow-hidden min-h-0">
         <div
@@ -1447,7 +1671,74 @@ export function CanvasWorkspace({
         }}
         onScroll={(e) => e.preventDefault()}
       >
-        <div className="absolute top-3 right-3 z-10 bg-white rounded-lg shadow-lg border border-gray-200 p-1.5 flex flex-col gap-1.5">
+        {/* Rulers */}
+        {(() => {
+          const { originX, originY, containerWidth, containerHeight } = getCanvasOrigin();
+          const pxPerUnit = zoom;
+          const tickTargets = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+          const step = tickTargets.find(s => s * pxPerUnit >= 50) || 1000;
+
+          const vTicks: number[] = [0];
+          for (let x = step; x < width; x += step) vTicks.push(x);
+          vTicks.push(width);
+          const hTicks: number[] = [];
+          for (let y = step; y < height; y += step) hTicks.push(y);
+          hTicks.push(height);
+
+          return (
+            <>
+              <div
+                className="absolute left-0 right-0 top-0 h-6 bg-white/90 border-b border-gray-300 z-10 select-none"
+                onMouseDown={(e) => {
+                  setDraggingGuide({ type: 'v', index: null });
+                  setDragGuidePos(canvasXFromScreen(e.clientX));
+                  setIsMouseDown(true);
+                }}
+              >
+                <div className="absolute pointer-events-none" style={{ left: `${originX}px`, right: `${containerWidth - (originX + width * zoom)}px`, top: 0, bottom: 0 }}>
+                  {vTicks.map((x) => {
+                    const sx = screenXFromCanvas(x) - originX;
+                    const isLong = x % (step * 2) === 0;
+                    return (
+                      <div key={`rt-${x}`} className="absolute" style={{ left: `${sx}px`, top: 0, bottom: 0 }}>
+                        <div className="absolute bottom-0 w-px bg-gray-400" style={{ height: isLong ? '12px' : '8px' }} />
+                        {isLong && (
+                          <div className="absolute text-[10px] text-gray-500" style={{ top: '2px', left: '2px' }}>{x}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div
+                className="absolute top-0 bottom-0 left-0 w-6 bg-white/90 border-r border-gray-300 z-10 select-none"
+                onMouseDown={(e) => {
+                  setDraggingGuide({ type: 'h', index: null });
+                  setDragGuidePos(canvasYFromScreen(e.clientY));
+                  setIsMouseDown(true);
+                }}
+              >
+                <div className="absolute pointer-events-none" style={{ top: `${originY}px`, bottom: `${containerHeight - (originY + height * zoom)}px`, left: 0, right: 0 }}>
+                  {hTicks.map((y) => {
+                    const sy = screenYFromCanvas(y) - originY;
+                    const isLong = y % (step * 2) === 0;
+                    return (
+                      <div key={`rl-${y}`} className="absolute" style={{ top: `${sy}px`, left: 0, right: 0 }}>
+                        <div className="absolute right-0 h-px bg-gray-400" style={{ width: isLong ? '12px' : '8px' }} />
+                        {isLong && (
+                          <div className="absolute text-[10px] text-gray-500" style={{ left: '2px', top: '-8px' }}>{y}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* Zoom/controls panel */}
+        <div className="absolute top-3 right-3 z-20 bg-white rounded-lg shadow-lg border border-gray-200 p-1.5 flex flex-col gap-1.5">
           <button
             onClick={handleZoomIn}
             className="p-1.5 hover:bg-gray-100 rounded transition-colors"
@@ -1498,6 +1789,71 @@ export function CanvasWorkspace({
             <Keyboard className="w-3.5 h-3.5 text-gray-700" />
           </button>
         </div>
+
+        {/* Guides overlay */}
+        {(() => {
+          const renderGuide = (type: 'v' | 'h', pos: number, key: string, dragging: boolean = false) => {
+            if (type === 'v') {
+              const sx = screenXFromCanvas(pos);
+              return (
+                <div
+                  key={key}
+                  className="absolute z-30 select-none"
+                  style={{ left: `${sx}px`, top: '6px', bottom: 0 }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    setDraggingGuide({ type: 'v', index: dragging ? null : parseInt(key.split('-')[1]) });
+                    setIsMouseDown(true);
+                  }}
+                  onMouseEnter={() => setHoveredGuide({ type: 'v', index: dragging ? null : parseInt(key.split('-')[1]) })}
+                  onMouseLeave={() => setHoveredGuide(null)}
+                >
+                  <div
+                    className={`${(hoveredGuide?.type === 'v' && hoveredGuide?.index === (dragging ? null : parseInt(key.split('-')[1]))) || (draggingGuide?.type === 'v' && (dragging || draggingGuide.index === parseInt(key.split('-')[1]))) ? 'w-0.5 bg-blue-600' : 'w-px bg-blue-500/70'}`}
+                    style={{ cursor: draggingGuide ? 'grabbing' : 'grab', height: '100%' }}
+                  />
+                  {/* Snap indicator */}
+                  {snapActive.v !== null && Math.abs(pos - (snapActive.v || 0)) < 0.0001 && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] px-1 py-0.5 rounded shadow">
+                      {Math.round(pos)}
+                    </div>
+                  )}
+                </div>
+              );
+            } else {
+              const sy = screenYFromCanvas(pos);
+              return (
+                <div
+                  key={key}
+                  className="absolute z-30 select-none"
+                  style={{ top: `${sy}px`, left: '6px', right: 0 }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    setDraggingGuide({ type: 'h', index: dragging ? null : parseInt(key.split('-')[1]) });
+                    setIsMouseDown(true);
+                  }}
+                  onMouseEnter={() => setHoveredGuide({ type: 'h', index: dragging ? null : parseInt(key.split('-')[1]) })}
+                  onMouseLeave={() => setHoveredGuide(null)}
+                >
+                  <div
+                    className={`${(hoveredGuide?.type === 'h' && hoveredGuide?.index === (dragging ? null : parseInt(key.split('-')[1]))) || (draggingGuide?.type === 'h' && (dragging || draggingGuide.index === parseInt(key.split('-')[1]))) ? 'h-0.5 bg-blue-600' : 'h-px bg-blue-500/70'}`}
+                    style={{ cursor: draggingGuide ? 'grabbing' : 'grab', width: '100%' }}
+                  />
+                  {snapActive.h !== null && Math.abs(pos - (snapActive.h || 0)) < 0.0001 && (
+                    <div className="absolute left-1 bg-blue-600 text-white text-[10px] px-1 py-0.5 rounded shadow">
+                      {Math.round(pos)}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+          };
+
+          const v = verticalGuides.map((x, i) => renderGuide('v', x, `vg-${i}`));
+          const h = horizontalGuides.map((y, i) => renderGuide('h', y, `hg-${i}`));
+          const drag = draggingGuide && dragGuidePos !== null ? renderGuide(draggingGuide.type, dragGuidePos, 'dragging', true) : null;
+          return <>{v}{h}{drag}</>;
+        })()}
 
         <div
           className="absolute inset-0 flex items-center justify-center canvas-container"
@@ -1570,6 +1926,14 @@ export function CanvasWorkspace({
           </div>
         )}
       </div>
+
+      <GridGuideModal
+        isOpen={showGridModal}
+        pageWidth={width}
+        pageHeight={height}
+        onApply={applyGridGuides}
+        onClose={() => setShowGridModal(false)}
+      />
 
       <div
         ref={propertiesPanelRef}

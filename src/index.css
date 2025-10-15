@@ -11,6 +11,22 @@ html, body, #root {
   scroll-behavior: auto;
 }
 
+/* Disable user text selection across the app to prevent accidental highlight during drags */
+* {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Allow text selection in form controls and textareas explicitly */
+input, textarea {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
 input, textarea, select, button {
   scroll-margin: 0;
 }

@@ -7,6 +7,9 @@ import {
   AlignVerticalJustifyEnd,
   Group,
   Ungroup,
+  GalleryVertical,
+  GalleryHorizontal,
+  Ruler,
 } from 'lucide-react';
 import { getModifierKey } from '../hooks/useKeyboardShortcuts';
 
@@ -16,6 +19,9 @@ interface AlignmentToolbarProps {
   onGroup: () => void;
   onUngroup: () => void;
   hasGroup: boolean;
+  onDistribute?: (axis: 'horizontal' | 'vertical') => void;
+  onAddGuide?: (orientation: 'vertical' | 'horizontal') => void;
+  onOpenGrid?: () => void;
 }
 
 export function AlignmentToolbar({
@@ -24,6 +30,9 @@ export function AlignmentToolbar({
   onGroup,
   onUngroup,
   hasGroup,
+  onDistribute,
+  onAddGuide,
+  onOpenGrid,
 }: AlignmentToolbarProps) {
   const isVisible = selectedCount > 0;
   const modKey = getModifierKey();
@@ -97,6 +106,28 @@ export function AlignmentToolbar({
               </button>
             </div>
 
+            {onDistribute && (
+              <>
+                <div className="h-5 w-px bg-gray-300"></div>
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => onDistribute('horizontal')}
+                    className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+                    title="Distribute Horizontally"
+                  >
+                    <GalleryHorizontal className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onDistribute('vertical')}
+                    className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+                    title="Distribute Vertically"
+                  >
+                    <GalleryVertical className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </>
+            )}
+
             <div className="h-5 w-px bg-gray-300"></div>
             <button
               onClick={onGroup}
@@ -119,6 +150,8 @@ export function AlignmentToolbar({
             Ungroup
           </button>
         )}
+
+        {/* Guide buttons removed as requested; grid builder moved to top header */}
       </div>
     </div>
   );

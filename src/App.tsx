@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileSpreadsheet, Eye, Download, Database, Upload, FileUp, History, Save, Home, Pencil, FileDown } from 'lucide-react';
+import { FileSpreadsheet, Eye, Download, Database, Upload, FileUp, History, Save, Home, Pencil, FileDown, Ruler } from 'lucide-react';
 import { useToast } from './contexts/ToastContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useExport } from './hooks/useExport';
@@ -552,6 +552,22 @@ function App() {
               >
                 <FileDown className="w-3 h-3" />
                 <span>Export JSON</span>
+              </button>
+              <button
+                onClick={() => window.dispatchEvent(new Event('open-grid-modal'))}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                title="Open Grid Builder"
+              >
+                <Ruler className="w-3 h-3" />
+                <span>Grid</span>
+              </button>
+              <button
+                onClick={() => window.dispatchEvent(new Event('clear-guides'))}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                title="Clear Guides"
+              >
+                <Ruler className="w-3 h-3 rotate-45" />
+                <span>Clear</span>
               </button>
               <button
                 onClick={() => setShowPreview(true)}
