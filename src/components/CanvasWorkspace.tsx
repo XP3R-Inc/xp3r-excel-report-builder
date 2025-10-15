@@ -1340,10 +1340,10 @@ export function CanvasWorkspace({
         onUngroup={handleUngroup}
         hasGroup={hasGroupSelected}
       />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         <div
           ref={leftSidebarRef}
-          className="w-52 bg-white border-r flex flex-col overflow-hidden left-sidebar"
+          className="w-52 bg-white border-r flex flex-col overflow-hidden min-h-0 h-full left-sidebar"
           onWheel={(e) => e.stopPropagation()}
           onPointerDownCapture={() => {
             isPanelInteractingRef.current = true;
@@ -1373,7 +1373,7 @@ export function CanvasWorkspace({
           onClick={(e) => e.stopPropagation()}
           style={{ touchAction: 'auto' }}
         >
-        <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+        <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3 min-h-0 max-h-full">
         <div>
           <h3 className="text-xs font-semibold text-gray-700 mb-2">Add Elements</h3>
           <div className="flex flex-col gap-1.5">
@@ -1437,7 +1437,7 @@ export function CanvasWorkspace({
 
       <div
         ref={containerRef}
-        className="flex-1 bg-gray-100 overflow-hidden relative"
+        className="flex-1 bg-gray-100 overflow-hidden relative min-h-0"
         onMouseDown={handleContainerMouseDown}
         style={{
           cursor: isPanning || isTrackpadPanning ? 'grabbing' : (isSpacePressed || isPanMode) ? 'grab' : 'default',
@@ -1572,7 +1572,7 @@ export function CanvasWorkspace({
 
       <div
         ref={propertiesPanelRef}
-        className="w-72 bg-white border-l flex flex-col overflow-hidden properties-panel"
+        className="w-72 bg-white border-l flex flex-col overflow-hidden min-h-0 h-full properties-panel"
         onWheel={(e) => e.stopPropagation()}
         onPointerDownCapture={() => {
           isPanelInteractingRef.current = true;

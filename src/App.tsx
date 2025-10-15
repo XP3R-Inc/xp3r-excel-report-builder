@@ -592,7 +592,7 @@ function App() {
         )}
       </header>
 
-      <main className="flex-1 flex flex-col">
+      <main className="flex-1 flex flex-col min-h-0">
         {step === 'upload' && (
           <div className="flex-1 flex items-center justify-center p-8">
             <ExcelUploader onDataParsed={handleDataParsed} />
@@ -611,14 +611,14 @@ function App() {
         )}
 
         {step === 'canvas' && excelData && (
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <PageSizeSelector
               selectedSize={pageSize}
               orientation={orientation}
               onSizeChange={setPageSize}
               onOrientationChange={setOrientation}
             />
-            <div className="flex-1 overflow-hidden" style={{ pointerEvents: 'auto' }}>
+            <div className="flex-1 overflow-hidden min-h-0" style={{ pointerEvents: 'auto' }}>
               <CanvasWorkspace
                 width={currentWidth}
                 height={currentHeight}

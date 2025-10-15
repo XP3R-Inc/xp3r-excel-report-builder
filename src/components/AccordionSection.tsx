@@ -10,6 +10,7 @@ interface AccordionSectionProps {
   badge?: string | number;
   icon?: ReactNode;
   highlight?: boolean;
+  nonCollapsible?: boolean;
 }
 
 export function AccordionSection({
@@ -21,10 +22,11 @@ export function AccordionSection({
   badge,
   icon,
   highlight = false,
+  nonCollapsible = false,
 }: AccordionSectionProps) {
   const [internalExpanded, setInternalExpanded] = useState(defaultExpanded);
   const isControlled = controlledExpanded !== undefined;
-  const expanded = isControlled ? controlledExpanded : internalExpanded;
+  const expanded = nonCollapsible ? true : (isControlled ? controlledExpanded : internalExpanded);
 
   const handleToggle = (e: React.MouseEvent | React.KeyboardEvent) => {
     e.preventDefault();
@@ -38,38 +40,55 @@ export function AccordionSection({
 
   return (
     <div className={`border-b border-gray-200 ${highlight ? 'bg-blue-50' : ''}`}>
-      <button
-        onClick={handleToggle}
-        onKeyDown={(e) => {
-          if (e.code === 'Space' || e.code === 'Enter') {
-            handleToggle(e);
-          }
-        }}
-        onMouseDown={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        onWheel={(e) => e.stopPropagation()}
-        onMouseMove={(e) => e.stopPropagation()}
-        onMouseUp={(e) => e.stopPropagation()}
-        onMouseEnter={(e) => e.stopPropagation()}
-        onMouseLeave={(e) => e.stopPropagation()}
-        className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-gray-50 transition-colors text-left"
-        type="button"
-      >
-        <div className="flex items-center gap-1.5 flex-1">
-          {icon && <span className="text-gray-500">{icon}</span>}
-          <span className="text-xs font-semibold text-gray-700">{title}</span>
-          {badge !== undefined && (
-            <span className="px-1 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
-              {badge}
-            </span>
-          )}
+      {nonCollapsible ? (
+        <div className="w-full flex items-center justify-between px-2 py-1.5 text-left select-none">
+          <div className="flex items-center gap-1.5 flex-1">
+            {icon && <span className="text-gray-500">{icon}</span>}
+            <span className="text-xs font-semibold text-gray-700">{title}</span>
+            {badge !== undefined && (
+              <span className="px-1 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                {badge}
+              </span>
+            )}
+          </div>
+          <div className="text-gray-300">
+            <ChevronDown className="w-3.5 h-3.5" />
+          </div>
         </div>
-        <div className="text-gray-400">
-          {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-        </div>
-      </button>
+      ) : (
+        <button
+          onClick={handleToggle}
+          onKeyDown={(e) => {
+            if (e.code === 'Space' || e.code === 'Enter') {
+              handleToggle(e);
+            }
+          }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onWheel={(e) => e.stopPropagation()}
+          onMouseMove={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onMouseEnter={(e) => e.stopPropagation()}
+          onMouseLeave={(e) => e.stopPropagation()}
+          className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-gray-50 transition-colors text-left"
+          type="button"
+        >
+          <div className="flex items-center gap-1.5 flex-1">
+            {icon && <span className="text-gray-500">{icon}</span>}
+            <span className="text-xs font-semibold text-gray-700">{title}</span>
+            {badge !== undefined && (
+              <span className="px-1 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                {badge}
+              </span>
+            )}
+          </div>
+          <div className="text-gray-400">
+            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </div>
+        </button>
+      )}
 
       {expanded && (
         <div

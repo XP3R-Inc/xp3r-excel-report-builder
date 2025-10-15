@@ -144,7 +144,7 @@ export function PropertiesPanel({
 
   return (
     <div
-      className="flex flex-col h-full"
+      className="flex flex-col h-full min-h-0"
       onWheel={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
@@ -192,15 +192,15 @@ export function PropertiesPanel({
       </div>
 
       <div
-        className="flex-1 overflow-y-auto px-2 pb-2"
+        className="flex-1 overflow-y-auto px-2 pb-2 min-h-0 max-h-[calc(100vh-64px-40px)]"
         onWheelCapture={(e) => e.stopPropagation()}
         onScroll={(e) => e.stopPropagation()}
       >
         <AccordionSection
           title="Position & Size"
           icon={<Move className="w-4 h-4" />}
-          defaultExpanded={expandedSections['position-size']}
-          onToggle={(expanded) => handleSectionToggle('position-size', expanded)}
+          nonCollapsible
+          defaultExpanded
           highlight={highlightSection('position-size')}
         >
           <div className="grid grid-cols-2 gap-2">
@@ -264,8 +264,8 @@ export function PropertiesPanel({
           <AccordionSection
             title="Typography"
             icon={<Type className="w-4 h-4" />}
-            defaultExpanded={expandedSections['typography']}
-            onToggle={(expanded) => handleSectionToggle('typography', expanded)}
+            nonCollapsible
+            defaultExpanded
             highlight={highlightSection('typography')}
           >
             <PresetSelector category="text" onApply={handleApplyPreset} currentStyle={element.style} />
@@ -428,8 +428,8 @@ export function PropertiesPanel({
         <AccordionSection
           title="Fill & Stroke"
           icon={<Palette className="w-4 h-4" />}
-          defaultExpanded={expandedSections['fill-stroke']}
-          onToggle={(expanded) => handleSectionToggle('fill-stroke', expanded)}
+          nonCollapsible
+          defaultExpanded
           highlight={highlightSection('fill-stroke')}
         >
           {element.type === 'shape' && (
@@ -538,8 +538,8 @@ export function PropertiesPanel({
         <AccordionSection
           title="Effects"
           icon={<Sparkles className="w-4 h-4" />}
-          defaultExpanded={expandedSections['effects']}
-          onToggle={(expanded) => handleSectionToggle('effects', expanded)}
+          nonCollapsible
+          defaultExpanded
           highlight={highlightSection('effects')}
         >
           <PresetSelector category="effect" onApply={handleApplyPreset} currentStyle={element.style} />
@@ -590,8 +590,8 @@ export function PropertiesPanel({
             <AccordionSection
               title="Data Binding"
               icon={<Database className="w-4 h-4" />}
-              defaultExpanded={expandedSections['data']}
-              onToggle={(expanded) => handleSectionToggle('data', expanded)}
+              nonCollapsible
+              defaultExpanded
               highlight={highlightSection('data')}
               badge={element.dataBinding ? '1' : element.dataBindings?.length || undefined}
             >
@@ -629,8 +629,8 @@ export function PropertiesPanel({
             <AccordionSection
               title="Text Overflow"
               icon={<Maximize2 className="w-4 h-4" />}
-              defaultExpanded={expandedSections['overflow']}
-              onToggle={(expanded) => handleSectionToggle('overflow', expanded)}
+              nonCollapsible
+              defaultExpanded
               highlight={highlightSection('overflow')}
             >
               <OverflowControls element={element} data={data} onUpdate={onUpdate} />
@@ -639,8 +639,8 @@ export function PropertiesPanel({
             <AccordionSection
               title="Lists"
               icon={<List className="w-4 h-4" />}
-              defaultExpanded={expandedSections['lists']}
-              onToggle={(expanded) => handleSectionToggle('lists', expanded)}
+              nonCollapsible
+              defaultExpanded
               highlight={highlightSection('lists')}
             >
               <label className="flex items-center gap-2 text-xs font-medium text-gray-600 mb-2">
@@ -709,8 +709,8 @@ export function PropertiesPanel({
         <AccordionSection
           title="Alignment & Constraints"
           icon={<Move className="w-4 h-4" />}
-          defaultExpanded={expandedSections['constraints']}
-          onToggle={(expanded) => handleSectionToggle('constraints', expanded)}
+          nonCollapsible
+          defaultExpanded
           highlight={highlightSection('constraints')}
         >
           <ConstraintsControl
@@ -725,8 +725,8 @@ export function PropertiesPanel({
           <AccordionSection
             title="Accessibility"
             icon={<Shield className="w-4 h-4" />}
-            defaultExpanded={expandedSections['accessibility']}
-            onToggle={(expanded) => handleSectionToggle('accessibility', expanded)}
+            nonCollapsible
+            defaultExpanded
             highlight={highlightSection('accessibility')}
           >
             <ContrastChecker
@@ -745,8 +745,8 @@ export function PropertiesPanel({
           <AccordionSection
             title="Image"
             icon={<FileDown className="w-4 h-4" />}
-            defaultExpanded={expandedSections['image']}
-            onToggle={(expanded) => handleSectionToggle('image', expanded)}
+            nonCollapsible
+            defaultExpanded
           >
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Fit Mode</label>
