@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-react';
 import { CanvasElement as CanvasElementType, ElementGroup } from '../lib/types';
 import { estimateTextOverflow } from '../utils/textOverflow';
 import { calculateOverflowStyle } from '../utils/overflowRenderer';
+import { formatMultipleBindings } from '../utils/dataFormatter';
 
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w';
 
@@ -72,19 +73,26 @@ const CanvasElementComponent: React.FC<CanvasElementProps> = ({
   const textContent = useMemo(() => {
     if (element.type !== 'text') return '';
 
+    // Prefer bound data for preview/export fidelity
     if (element.dataBindings && element.dataBindings.length > 0) {
-      return `{formatted: ${element.dataBindings.map(b => b.field).join(', ')}}`;
+      return formatMultipleBindings(sampleRow, element.dataBindings, element.bindingSeparator || ' ');
     }
 
     if (element.dataBinding) {
       if (element.isList) {
-        return `{${element.dataBinding} [${element.listLayout || 'vertical'} ${element.listStyle || 'none'}]}`;
+        const raw = sampleRow[element.dataBinding];
+        if (raw !== undefined && raw !== null) {
+          const items = String(raw).split(element.listDelimiter || ',');
+          return items.join(element.bindingSeparator || ' ');
+        }
+      } else {
+        const val = sampleRow[element.dataBinding];
+        if (val !== undefined && val !== null) return String(val);
       }
-      return `{${element.dataBinding}}`;
     }
 
     return element.content || '';
-  }, [element]);
+  }, [element, sampleRow]);
 
   const overflowStyle = useMemo(() => {
     if (element.type !== 'text') return {};
@@ -112,18 +120,18 @@ const CanvasElementComponent: React.FC<CanvasElementProps> = ({
       onMouseLeave={onMouseLeave}
     >
       {overflowInfo?.willOverflow && (
-        <div className="absolute -top-1 -right-1 z-10">
+        <div className="absolute -top-1 -right-1 z-10 helper-badge">
           <AlertTriangle className="w-4 h-4 text-amber-500 fill-amber-100" />
         </div>
       )}
       {isGrouped && groupInfo && (
-        <div className="absolute -top-5 -left-1 px-1.5 py-0.5 bg-purple-500 text-white text-[10px] rounded pointer-events-none">
+        <div className="absolute -top-5 -left-1 px-1.5 py-0.5 bg-purple-500 text-white text-[10px] rounded pointer-events-none helper-badge">
           {groupInfo.name}
         </div>
       )}
       {element.type === 'text' && (
         <div
-          className="w-full h-full flex items-center"
+          className="w-full h-full text-field"
           style={{
             fontSize: `${overflowStyle.fontSize || element.style?.fontSize || 16}px`,
             fontFamily: element.style?.fontFamily || 'Arial',

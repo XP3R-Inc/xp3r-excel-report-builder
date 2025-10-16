@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import JSZip from 'jszip';
+import html2canvas from 'html2canvas';
 import { CanvasElement } from '../lib/types';
 import { formatMultipleBindings } from './dataFormatter';
 import { updateExportJob } from '../lib/exportJobService';
@@ -24,7 +25,7 @@ async function renderCanvasToImage(
   height: number
 ): Promise<string> {
   const canvas = document.createElement('canvas');
-  const dpi = 300;
+  const dpi = 1000;
   const scale = dpi / 96;
 
   canvas.width = width * scale;
@@ -41,7 +42,7 @@ async function renderCanvasToImage(
 
   const imagePromises: Promise<void>[] = [];
 
-  for (const element of elements.filter(el => !el.hidden)) {
+  for (const element of elements.filter(el => !el.hidden && el.meta?.helper !== true)) {
     if (element.type === 'image' && element.imageUrl) {
       const img = new window.Image();
       const promise = new Promise<void>((resolve) => {
@@ -126,24 +127,44 @@ async function renderCanvasToImage(
 
       if (element.dataBindings && element.dataBindings.length > 0) {
         text = formatMultipleBindings(dataRow, element.dataBindings, element.bindingSeparator || ' ');
-      } else if (element.dataBinding && dataRow[element.dataBinding]) {
-        text = String(dataRow[element.dataBinding]);
+      } else if (element.dataBinding) {
+        const v = dataRow[element.dataBinding];
+        if (v !== undefined && v !== null) text = String(v);
       }
 
+      await (document as any).fonts?.ready;
       const overflowStyle = calculateOverflowStyle(element, text);
       const fontSize = overflowStyle.fontSize || element.style?.fontSize || 14;
       const fontFamily = element.style?.fontFamily || 'Arial';
-      const fontWeight = element.style?.fontWeight || 'normal';
+      const fontWeightRaw = element.style?.fontWeight || '400';
+      const fontWeight = typeof fontWeightRaw === 'string' ? fontWeightRaw : String(fontWeightRaw);
       const fontStyle = element.style?.fontStyle || 'normal';
 
-      ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
+      // Safer font declaration with quoted family and numeric weight fallback
+      const weightVal = /^(normal|bold|bolder|lighter|\d{3})$/.test(fontWeight) ? fontWeight : '400';
+      ctx.font = `${fontStyle} ${weightVal} ${fontSize}px "${fontFamily}"`;
       ctx.fillStyle = element.style?.color || '#000000';
 
       const textAlign = element.style?.textAlign || 'left';
       const verticalAlign = element.style?.verticalAlign || 'middle';
       const padding = element.style?.padding || 0;
-      const baseLineHeight = overflowStyle.lineHeight || element.style?.lineHeight || 1.5;
-      const lineHeight = fontSize * baseLineHeight;
+      // Normalize line-height to px and derive leading
+      const lhRaw = (overflowStyle as any).lineHeight ?? element.style?.lineHeight ?? 1.5;
+      let lineHeightPx: number;
+      if (typeof lhRaw === 'string') {
+        const m = lhRaw.match(/^([0-9.]+)px$/);
+        lineHeightPx = m ? Math.max(1, parseFloat(m[1])) : Math.max(1, parseFloat(lhRaw) * fontSize);
+      } else {
+        // If numeric > 10 treat as px, else multiplier
+        lineHeightPx = (lhRaw as number) > 10 ? (lhRaw as number) : Math.max(1, (lhRaw as number) * fontSize);
+      }
+      ctx.textBaseline = 'alphabetic';
+      const metrics = ctx.measureText('Mg');
+      const ascent = (metrics as any).actualBoundingBoxAscent ?? fontSize * 0.8;
+      const descent = (metrics as any).actualBoundingBoxDescent ?? fontSize * 0.2;
+      const contentBox = ascent + descent;
+      const leading = Math.max(0, lineHeightPx - contentBox);
+      const halfLeading = leading / 2;
 
       let xPos = padding;
 
@@ -163,16 +184,16 @@ async function renderCanvasToImage(
         const style = element.listStyle || 'none';
 
         if (layout === 'horizontal') {
+          // Single baseline for the line box
+          const availableHeight = Math.max(0, element.height - padding * 2);
+          const totalHeight = lineHeightPx; // one line
           let yPos: number;
           if (verticalAlign === 'top') {
-            ctx.textBaseline = 'top';
-            yPos = padding;
+            yPos = padding + halfLeading + ascent;
           } else if (verticalAlign === 'bottom') {
-            ctx.textBaseline = 'bottom';
-            yPos = element.height - padding;
+            yPos = padding + (availableHeight - totalHeight) + halfLeading + ascent;
           } else {
-            ctx.textBaseline = 'middle';
-            yPos = element.height / 2;
+            yPos = padding + (availableHeight - totalHeight) / 2 + halfLeading + ascent;
           }
 
           let currentX = padding;
@@ -208,20 +229,18 @@ async function renderCanvasToImage(
             currentX += ctx.measureText(displayText + '  ').width;
           });
         } else {
-          const totalHeight = items.length * lineHeight;
-          let startY: number;
-
+          const availableHeight = Math.max(0, element.height - padding * 2);
+          const totalHeight = items.length * lineHeightPx;
+          let firstBaseline: number;
           if (verticalAlign === 'top') {
-            startY = padding;
+            firstBaseline = padding + halfLeading + ascent;
           } else if (verticalAlign === 'bottom') {
-            startY = element.height - totalHeight - padding;
+            firstBaseline = padding + (availableHeight - totalHeight) + halfLeading + ascent;
           } else {
-            startY = (element.height - totalHeight) / 2;
+            firstBaseline = padding + (availableHeight - totalHeight) / 2 + halfLeading + ascent;
           }
-
-          ctx.textBaseline = 'top';
           items.forEach((item, index) => {
-            const yPos = startY + (index * lineHeight);
+            const yPos = firstBaseline + (index * lineHeightPx);
             let displayText = item.trim();
 
             if (style === 'bullets') {
@@ -237,16 +256,15 @@ async function renderCanvasToImage(
         const overflowStrategy = element.overflowStrategy || 'wrap';
 
         if (overflowStrategy === 'truncate') {
-          let startY: number;
+          const availableHeight = Math.max(0, element.height - padding * 2);
+          const totalHeight = lineHeightPx;
+          let baselineY: number;
           if (verticalAlign === 'top') {
-            startY = padding;
-            ctx.textBaseline = 'top';
+            baselineY = padding + halfLeading + ascent;
           } else if (verticalAlign === 'bottom') {
-            startY = element.height - lineHeight - padding;
-            ctx.textBaseline = 'top';
+            baselineY = padding + (availableHeight - totalHeight) + halfLeading + ascent;
           } else {
-            startY = (element.height - lineHeight) / 2;
-            ctx.textBaseline = 'top';
+            baselineY = padding + (availableHeight - totalHeight) / 2 + halfLeading + ascent;
           }
 
           const maxWidth = element.width - padding * 2;
@@ -261,29 +279,53 @@ async function renderCanvasToImage(
             truncatedText += '...';
           }
 
-          ctx.fillText(truncatedText, xPos, startY, maxWidth);
+          // Draw without maxWidth to avoid horizontal scaling
+          ctx.fillText(truncatedText, xPos, baselineY);
         } else {
-          const lines = text.split('\n');
-          const availableHeight = element.height - padding * 2;
-          const maxLines = Math.floor(availableHeight / lineHeight);
-          const displayLines = lines.slice(0, maxLines);
-          const totalHeight = displayLines.length * lineHeight;
-          let startY: number;
+          // Word-wrap by available width
+          const availableHeight = Math.max(0, element.height - padding * 2);
+          const maxWidth = Math.max(0, element.width - padding * 2);
+          const paras = text.split(/\n/);
+          const wrapped: string[] = [];
+          paras.forEach((para) => {
+            const words = para.split(/\s+/);
+            let line = '';
+            for (const w of words) {
+              const candidate = line ? line + ' ' + w : w;
+              if (ctx.measureText(candidate).width <= maxWidth) {
+                line = candidate;
+              } else {
+                if (line) wrapped.push(line);
+                line = w;
+              }
+            }
+            wrapped.push(line);
+          });
 
+          const maxLines = Math.max(0, Math.floor(availableHeight / lineHeightPx));
+          const displayLines = wrapped.slice(0, maxLines);
+          const totalHeight = displayLines.length * lineHeightPx;
+          let firstBaseline: number;
           if (verticalAlign === 'top') {
-            startY = padding;
-            ctx.textBaseline = 'top';
+            firstBaseline = padding + halfLeading + ascent;
           } else if (verticalAlign === 'bottom') {
-            startY = element.height - totalHeight - padding;
-            ctx.textBaseline = 'top';
+            firstBaseline = padding + (availableHeight - totalHeight) + halfLeading + ascent;
           } else {
-            startY = (element.height - totalHeight) / 2;
-            ctx.textBaseline = 'top';
+            firstBaseline = padding + (availableHeight - totalHeight) / 2 + halfLeading + ascent;
           }
 
           displayLines.forEach((line, index) => {
-            const yPos = startY + (index * lineHeight);
-            ctx.fillText(line, xPos, yPos, element.width - padding * 2);
+            const yPos = firstBaseline + (index * lineHeightPx);
+            if (textAlign === 'center') {
+              ctx.textAlign = 'center';
+              ctx.fillText(line, element.width / 2, yPos);
+            } else if (textAlign === 'right') {
+              ctx.textAlign = 'right';
+              ctx.fillText(line, element.width - padding, yPos);
+            } else {
+              ctx.textAlign = 'left';
+              ctx.fillText(line, xPos, yPos);
+            }
           });
         }
       }
@@ -332,14 +374,64 @@ export async function exportToPDF(options: ExportOptions): Promise<string> {
 
     if (exportMode === 'single') {
       const dataRow = data[rowIndex] || {};
-      const imageData = await renderCanvasToImage(elements, dataRow, pageWidth, pageHeight);
+      // Try DOM capture for exact visual match if the on-screen canvas is present
+      let imageData: string | null = null;
+      const canvasEl = document.getElementById('export-canvas') as HTMLElement | null;
+      if (canvasEl) {
+        // Ensure fonts loaded
+        try { await (document as any).fonts?.ready; } catch {}
+        const PX_DPI = 96;
+        const TARGET_DPI = 300;
+        const captureScale = TARGET_DPI / PX_DPI;
+        const canvasBmp = await html2canvas(canvasEl, {
+          backgroundColor: '#ffffff',
+          scale: captureScale,
+          // Capture at exact CSS size to avoid resampling differences
+          useCORS: true,
+          allowTaint: false,
+          logging: false,
+          windowWidth: canvasEl.clientWidth,
+          windowHeight: canvasEl.clientHeight,
+          width: pageWidth,
+          height: pageHeight,
+          scrollX: 0,
+          scrollY: 0,
+          onclone: (doc) => {
+            // Hide helper overlays
+            const style = doc.createElement('style');
+            // Ensure text fields preserve CSS text rendering exactly during capture
+            style.textContent = `.helper-badge{display:none!important}
+              #export-canvas{box-shadow:none!important}
+              #export-canvas .text-field{white-space:pre-wrap!important;overflow-wrap:anywhere!important;word-break:break-word!important;}
+            `;
+            doc.head.appendChild(style);
+            const el = doc.getElementById('export-canvas') as HTMLElement | null;
+            if (el) {
+              // Force exact size and neutralize transforms/shadows for a 1:1 capture
+              el.style.transform = 'none';
+              el.style.width = `${pageWidth}px`;
+              el.style.height = `${pageHeight}px`;
+              el.style.boxShadow = 'none';
+              // Also ensure parent of export-canvas has no transform if any
+              const parent = el.parentElement as HTMLElement | null;
+              if (parent) {
+                parent.style.transform = 'none';
+              }
+            }
+          },
+        });
+        imageData = canvasBmp.toDataURL('image/png');
+      }
+      if (!imageData) {
+        imageData = await renderCanvasToImage(elements, dataRow, pageWidth, pageHeight);
+      }
 
       const pdf = new jsPDF({
         orientation: mmWidth > mmHeight ? 'landscape' : 'portrait',
         unit: 'mm',
         format: [mmWidth, mmHeight],
       });
-
+      // After forcing DOM capture to exact page size, draw full-page without distortion
       pdf.addImage(imageData, 'PNG', 0, 0, mmWidth, mmHeight);
       const pdfBlob = pdf.output('blob');
       const url = URL.createObjectURL(pdfBlob);
@@ -366,6 +458,7 @@ export async function exportToPDF(options: ExportOptions): Promise<string> {
 
       for (let i = 0; i < totalRows; i++) {
         const dataRow = data[i];
+        // Batch mode uses renderer fallback for now
         const imageData = await renderCanvasToImage(elements, dataRow, pageWidth, pageHeight);
 
         const pdf = new jsPDF({

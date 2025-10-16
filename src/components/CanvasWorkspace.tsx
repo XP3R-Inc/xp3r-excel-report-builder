@@ -1873,6 +1873,7 @@ export function CanvasWorkspace({
         >
           <div
             ref={canvasRef}
+            id="export-canvas"
             className="bg-white shadow-2xl relative"
             style={{
               width: `${width}px`,
@@ -1886,7 +1887,9 @@ export function CanvasWorkspace({
             onMouseDown={handleCanvasMouseDown}
             onContextMenu={(e) => e.preventDefault()}
           >
-            {elements.filter(el => !el.hidden).map((element) => (
+            {elements
+              .filter(el => !el.hidden && el.meta?.helper !== true)
+              .map((element) => (
               <MemoizedCanvasElement
                 key={element.id}
                 element={element}
